@@ -144,6 +144,13 @@
 
     let isStopped = false, logs = [];
 
+    function parseSpintax(text) {
+  return text.replace(/\{([^{}]+?)\}/g, (_, options) => {
+    const choices = options.split('|');
+    return choices[Math.floor(Math.random() * choices.length)];
+  });
+}
+
     function randomDelay(min, max) {
       return Math.floor(Math.random() * (max - min + 1)) + min;
     }
@@ -186,8 +193,9 @@
         if (isStopped) break;
 
         const { value: phone, dataset: { name } } = selected[i];
-        const greeting = greetTpl.replace(/{{name}}/gi, name);
-        const message  = msgTpl.replace(/{{name}}/gi, name);
+        const greeting = parseSpintax(greetTpl.replace(/{{name}}/gi, name));
+        const message  = parseSpintax(msgTpl.replace(/{{name}}/gi, name));
+
         const file     = fileInput.files[0];
 
         // 1️⃣ Hantar salam dulu
@@ -246,6 +254,13 @@
         }
 
         updateProgress(i+1, total);
+
+function parseSpintax(text) {
+  return text.replace(/\{([^{}]+?)\}/g, (_, options) => {
+    const choices = options.split('|');
+    return choices[Math.floor(Math.random() * choices.length)];
+  });
+}
 
         // Delay antara mesej & penerima
         const delayMsg     = randomDelay(3000,4000),

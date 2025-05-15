@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <title>Broadcast WhatsApp Team</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    textarea, select, input[type="file"] { width: 100%; margin-top: 5px; margin-bottom: 10px; }
+    .contact-list { max-height: 200px; overflow-y: scroll; border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; }
+    .log { background: #f9f9f9; border: 1px solid #ccc; padding: 10px; margin-top: 10px; white-space: pre-wrap; max-height: 300px; overflow-y: auto; font-family: monospace; font-size: 0.9em; }
+    .preview { margin-top: 10px; }
+    #progressBar { height: 20px; background: #ccc; border-radius: 10px; overflow: hidden; margin-top: 10px; }
+    #progressFill { height: 100%; width: 0%; background: green; text-align: center; color: white; line-height: 20px; }
+    .btn { padding: 8px 12px; margin-right: 10px; }
+  </style>
+</head>
+<body>
+
+  <h2>Sistem Broadcast WhatsApp DPPKKN</h2>
+
+  <!-- Preset -->
+  <label>Preset Mesej:</label>
+  <select id="presetSelect"><option value="">-- Pilih Preset --</option></select>
+  <button class="btn" onclick="savePreset()">💾 Simpan Preset</button>
+
+  <!-- Salam & Nama -->
+  <label>Salam & Nama (contoh: Assalamualaikum {{name}}):</label>
+  <textarea id="greeting" rows="2" placeholder="Taip ucapan salam di sini..."></textarea>
+
+  <!-- Mesej -->
+  <label>Mesej (gunakan {{name}} untuk nama):</label>
+  <textarea id="message" rows="5" placeholder="Contoh: Jemput hadir, {{name}}..."></textarea>
+
+  <!-- Fail -->
+  <label>Fail (Gambar / PDF):</label>
+  <input type="file" id="media" accept=".jpg,.jpeg,.png,.pdf">
+  <div class="preview" id="filePreview"></div>
+
+  <!-- Penerima -->
+  <label>Senarai Penerima:</label>
+  <div class="contact-list" id="contactList"></div>
+  <label><input type="checkbox" id="selectAll"> Pilih Semua</label>
+
+  <!-- Kawalan -->
+  <br><br>
+  <button class="btn" onclick="startBroadcast()">🚀 Mula Hantar</button>
+  <button class="btn" onclick="stopBroadcast()">🛑 Hentikan</button>
+  <button class="btn" onclick="exportCSV()">📥 Export Log CSV</button>
+
+  <!-- Bar Kemajuan -->
+  <div id="progressBar"><div id="progressFill">0%</div></div>
+
+  <!-- Log -->
+  <div class="log" id="log">[--:--:--] Log penghantaran akan dipaparkan di sini...</div>
+
+  <script>
+    // Data Kontak
+    const contacts = [
+      { name: "Ust Mad", phone: "60139309343" },
+      { name: "Ust Halim", phone: "60105063319" },
+      { name: "Ust Syahid", phone: "60145430837" },
+      { name: "Fahmi", phone: "60139586345" },
+      { name: "Syamil", phone: "60105272343" },
+      { name: "Irfan", phone: "601125417866" },
+      { name: "Akir", phone: "60179141798" },
+      { name: "Ust Marwan", phone: "60148413672" },
+      { name: "Salam", phone: "601135385636" },
+      { name: "Ust Syauqi", phone: "6013927875" },
+      { name: "Ust Syed Zuhairi", phone: "60145162481" },
+      { name: "Sepu", phone: "60199398185" },
+      { name: "Haziq", phone: "60133325388" },
+      { name: "Saiful", phone: "601112907323" },
+      { name: "Faiz Mirang", phone: "60139969738" },
+      { name: "Ishak", phone: "60196728371" },
+      { name: "Hadi", phone: "6014819504" },
+      { name: "Azam", phone: "60138855863" },
+      { name: "Nafizi", phone: "601132544142" },
+      { name: "Man", phone: "60137262293" },
+      { name: "Ammar", phone: "601159043558" },
+      { name: "Ust Azzam", phone: "60107902015" },
+      { name: "Ripin", phone: "601119982385" },
+      { name: "Ust Adli", phone: "601119688791" },
+      { name: "Ust Munawwir", phone: "60145304524" },
+      { name: "Faqih", phone: "60148219991" }
+    ];
+
+    // Papar senarai kontak
+    const contactListDiv = document.getElementById("contactList");
+    contacts.forEach(c => {
+      contactListDiv.innerHTML +=
+        `<label><input type="checkbox" class="contact" value="${c.phone}" data-name="${c.name}" checked>
+        ${c.name} (${c.phone})</label><br>`;
+    });
+    document.getElementById("selectAll").addEventListener("change", function() {
+      document.querySelectorAll(".contact").forEach(cb => cb.checked = this.checked);
+    });
+
+    // Preview Fail
+    document.getElementById("media").addEventListener("change", function() {
+      const file = this.files[0], preview = document.getElementById("filePreview");
+      preview.innerHTML = "";
+      if (!file) return;
+      if (file.type.startsWith("image/")) {
+        const img = document.createElement("img");
+        img.src = URL.createObjectURL(file);
+        img.style.maxWidth = "200px";
+        preview.appendChild(img);
+      } else if (file.type === "application/pdf") {
+        preview.textContent = `📄 Fail PDF: ${file.name}`;
+      } else {
+        preview.textContent = `📎 Lampiran: ${file.name}`;
+      }
+    });
+
+    // Preset Mesej (localStorage)
+    function loadPresets() {
+      const stored = JSON.parse(localStorage.getItem('waPresets') || '[]'),
+            select = document.getElementById('presetSelect');
+      stored.forEach(p => {
+        select.innerHTML += `<option value="${encodeURIComponent(p.msg)}">${p.name}</option>`;
+      });
+    }
+    function savePreset() {
+      const msg = document.getElementById('greeting').value.trim();
+      if (!msg) return alert('Tiada mesej untuk disimpan.');
+      const name = prompt('Nama preset:', `Preset ${new Date().toLocaleString()}`);
+      if (!name) return;
+      const stored = JSON.parse(localStorage.getItem('waPresets') || '[]');
+      stored.push({ name, msg });
+      localStorage.setItem('waPresets', JSON.stringify(stored));
+      document.getElementById('presetSelect').innerHTML +=
+        `<option value="${encodeURIComponent(msg)}">${name}</option>`;
+      alert('Preset disimpan!');
+    }
+    document.getElementById('presetSelect').addEventListener('change', function() {
+      if (this.value) document.getElementById('greeting').value = decodeURIComponent(this.value);
+    });
+    loadPresets();
+
+    // API Config
+    const API_URL = "https://app.wasapmatic.com/api/send/whatsapp",
+          SECRET  = "c9621cc644bfbe0ce2b36be6d77407e15cbf7ef6",
+          ACCOUNT = "17473286351679091c5a880faf6fb5e6087eb1b2dc68261e7beb2a8";
+
+    let isStopped = false, logs = [];
+
+    function randomDelay(min, max) {
+      return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+
+    function logText(msg) {
+      const now = new Date().toLocaleTimeString(),
+            logDiv = document.getElementById("log");
+      logDiv.textContent += `\n[${now}] ${msg}`;
+      logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    function updateProgress(current, total) {
+      const pct = Math.round((current/total)*100);
+      const fill = document.getElementById("progressFill");
+      fill.style.width = pct + "%";
+      fill.textContent = pct + "%";
+    }
+
+    function stopBroadcast() {
+      isStopped = true;
+      logText("❌ Penghantaran dihentikan oleh pengguna.");
+    }
+
+    async function startBroadcast() {
+      isStopped = false;
+      logs = [];
+      logText("🚀 Mulakan proses broadcast");
+
+      const greetTpl   = document.getElementById("greeting").value.trim(),
+            msgTpl     = document.getElementById("message").value.trim(),
+            fileInput  = document.getElementById("media"),
+            selected   = Array.from(document.querySelectorAll(".contact:checked")),
+            total      = selected.length;
+
+      if ((!greetTpl && !msgTpl) || total === 0) {
+        return alert("Sila isi kotak Salam dan/atau Mesej, dan pilih penerima.");
+      }
+
+      for (let i = 0; i < total; i++) {
+        if (isStopped) break;
+
+        const { value: phone, dataset: { name } } = selected[i];
+        const greeting = greetTpl.replace(/{{name}}/gi, name);
+        const message  = msgTpl.replace(/{{name}}/gi, name);
+        const file     = fileInput.files[0];
+
+        // 1️⃣ Hantar salam dulu
+        if (greeting) {
+          logText(`📨 [Salam] Hantar ke ${name} (${phone})`);
+          try {
+            const formG = new FormData();
+            formG.append("secret", SECRET);
+            formG.append("account", ACCOUNT);
+            formG.append("recipient", phone);
+            formG.append("priority", "1");
+            formG.append("message", greeting);
+            formG.append("type", "text");
+            await fetch(API_URL, { method: "POST", body: formG });
+            logText("✅ [Salam] Berjaya");
+            logs.push({ name, phone, part:"Salam", status:"Berjaya", time:new Date().toLocaleTimeString() });
+          } catch (e) {
+            logText(`❌ [Salam] Gagal: ${e.message}`);
+            logs.push({ name, phone, part:"Salam", status:"Gagal", time:new Date().toLocaleTimeString() });
+          }
+          const d1 = randomDelay(4000,8000);
+          logText(`⏱ Delay selepas salam: ${(d1/1000).toFixed(1)}s`);
+          await new Promise(r=>setTimeout(r,d1));
+        }
+
+        // 2️⃣ Hantar mesej + media
+        logText(`📨 [Mesej] Hantar ke ${name} (${phone})`);
+        try {
+          const formM = new FormData();
+          formM.append("secret", SECRET);
+          formM.append("account", ACCOUNT);
+          formM.append("recipient", phone);
+          formM.append("priority", "1");
+          formM.append("message", message);
+          if (file) {
+            const ext = file.name.split('.').pop().toLowerCase();
+            if (["jpg","jpeg","png","gif","mp4","mp3","ogg"].includes(ext)) {
+              formM.append("type","media");
+              formM.append("media_file", file);
+            } else {
+              formM.append("type","document");
+              formM.append("document_file", file);
+              formM.append("document_name", file.name);
+              formM.append("document_type", ext);
+            }
+          } else {
+            formM.append("type","text");
+          }
+          const res = await fetch(API_URL, { method:"POST", body:formM });
+          const data = await res.json();
+          logText(`✅ [Mesej] Respons: ${data.message||'OK'}`);
+          logs.push({ name, phone, part:"Mesej", status:"Berjaya", time:new Date().toLocaleTimeString() });
+        } catch (err) {
+          logText(`❌ [Mesej] Gagal: ${err.message}`);
+          logs.push({ name, phone, part:"Mesej", status:"Gagal", time:new Date().toLocaleTimeString() });
+        }
+
+        updateProgress(i+1, total);
+
+        // Delay antara mesej & penerima
+        const delayMsg     = randomDelay(3000,4000),
+              delayContact = randomDelay(12000,25000);
+        logText(`⏱ Delay antara mesej: ${(delayMsg/1000).toFixed(1)}s + delay penerima: ${(delayContact/1000).toFixed(1)}s`);
+        await new Promise(r=>setTimeout(r, delayMsg + delayContact));
+
+        // Delay batch setiap 10
+        if ((i+1)%10 ===0) {
+          const delayBatch = randomDelay(25000,40000);
+          logText(`⏱ Delay batch (setiap 10): ${(delayBatch/1000).toFixed(1)}s`);
+          await new Promise(r=>setTimeout(r, delayBatch));
+        }
+      }
+
+      logText("🎉 Semua mesej selesai dihantar.");
+    }
+
+    function exportCSV() {
+      if (!logs.length) return alert("Tiada log untuk dieksport.");
+      let csv = "Nama,Telefon,Part,Status,Masa\n";
+      logs.forEach(l=> csv+=`${l.name},${l.phone},${l.part},${l.status},${l.time}\n`);
+      const blob = new Blob([csv],{type:'text/csv'}),
+            url = URL.createObjectURL(blob),
+            a = document.createElement('a');
+      a.href = url; a.download='log_broadcast.csv'; a.click();
+    }
+  </script>
+
+</body>
+</html>
